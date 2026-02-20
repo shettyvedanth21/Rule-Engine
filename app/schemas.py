@@ -123,9 +123,13 @@ class NotificationBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     message: str
     notification_type: str = "INFO"
+    channel: str = Field(..., description="SMS, WHATSAPP, TELEGRAM, EMAIL, WEBHOOK")
     priority: str = "MEDIUM"
     recipient_email: Optional[str] = None
     recipient_phone: Optional[str] = None
+    whatsapp_number: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    webhook_url: Optional[str] = None
 
 
 class NotificationCreate(NotificationBase):
@@ -159,6 +163,8 @@ class NotificationSettingsBase(BaseModel):
     recipient_email: Optional[str] = None
     recipient_phone: Optional[str] = None
     whatsapp_number: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    webhook_url: Optional[str] = None
     push_token: Optional[str] = None
     send_interval_minutes: int = 60
     escalation_enabled: bool = True
@@ -175,6 +181,8 @@ class NotificationSettingsUpdate(BaseModel):
     recipient_email: Optional[str] = None
     recipient_phone: Optional[str] = None
     whatsapp_number: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    webhook_url: Optional[str] = None
     push_token: Optional[str] = None
     send_interval_minutes: Optional[int] = None
     escalation_enabled: Optional[bool] = None
@@ -199,3 +207,24 @@ class TriggerNotificationRequest(BaseModel):
     message: str
     priority: str = "MEDIUM"
     notification_type: str = "ALERT"
+    channel: str = Field(..., description="SMS, WHATSAPP, TELEGRAM, EMAIL, WEBHOOK")
+    recipient_email: Optional[str] = None
+    recipient_phone: Optional[str] = None
+    whatsapp_number: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    webhook_url: Optional[str] = None
+
+
+# New schema for triggering notifications to multiple channels
+class TriggerMultiChannelNotificationRequest(BaseModel):
+    rule_id: str
+    title: str
+    message: str
+    priority: str = "MEDIUM"
+    notification_type: str = "ALERT"
+    channels: List[str] = Field(..., description="List of channels: SMS, WHATSAPP, TELEGRAM, EMAIL, WEBHOOK")
+    recipient_email: Optional[str] = None
+    recipient_phone: Optional[str] = None
+    whatsapp_number: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    webhook_url: Optional[str] = None
