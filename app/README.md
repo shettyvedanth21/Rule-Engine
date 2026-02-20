@@ -1,17 +1,19 @@
 # Rule Engine API
 
-A FastAPI-based Rule Engine for monitoring, evaluating IoT device rules, and sending notifications with escalation support.
+A FastAPI-based Rule Engine for monitoring, evaluating rules, and sending multi-channel notifications.
 
 ---
 
 ## Features
 
-- **Rule Management** - Create, update, delete rules
-- **Rule Actions** - Define actions when rules trigger
-- **Rule Evaluations** - Store evaluation results
-- **Rule Triggers** - Track triggered events
-- **Notifications** - Send alerts via Email, SMS, WhatsApp, Push
-- **Escalation** - Automatic escalation if alerts are not acknowledged
+- **Rule Management** - Create, update, delete rules with conditions
+- **Rule Evaluation** - Evaluate data against rules (SIMPLE, AND, OR conditions)
+- **Multi-Channel Notifications** - Send via Email, SMS, WhatsApp, Telegram, Webhook, In-App
+- **Parallel Execution** - Notifications sent concurrently to all channels
+- **Debounce Mechanism** - Prevent repeated alerts within time window
+- **Retry Mechanism** - Automatic retry for failed notifications
+- **Rule State Tracking** - Track Triggered/Not Triggered state
+- **Event Logging** - Detailed logs for each notification attempt
 
 ---
 
@@ -25,15 +27,15 @@ pip install -r requirements.txt
 ### 2. Configure
 Update the `.env` file with your database credentials:
 ```env
-DB_HOST=your-mysql-host
+DB_HOST=factory-ops.cmt486yymn9w.us-east-1.rds.amazonaws.com
 DB_USER=admin
-DB_PASSWORD=yourpassword
+DB_PASSWORD=Ruleengine
 DB_NAME=factory
 ```
 
 ### 3. Run
 ```bash
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+python app/main.py
 ```
 
 ### 4. Open API Docs
@@ -52,23 +54,12 @@ Visit: http://localhost:8000/docs
 | PUT | `/api/rules/{id}` | Update rule |
 | DELETE | `/api/rules/{id}` | Delete rule |
 
-### Rule Actions
+### Rule Evaluation
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/rule-actions` | Get all actions |
-| POST | `/api/rule-actions` | Create action |
-
-### Rule Evaluations
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/rule-evaluations` | Get all evaluations |
-| POST | `/api/rule-evaluations` | Create evaluation |
-
-### Rule Triggers
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/rule-triggers` | Get all triggers |
-| POST | `/api/rule-triggers` | Create trigger |
+| POST | `/api/rules/evaluate` | Evaluate data against all rules |
+| POST | `/api/rules/evaluate/{id}` | Evaluate against specific rule |
+| POST | `/api/rules/trigger-now` | Manually trigger a rule |
 
 ### Notifications
 | Method | Endpoint | Description |
@@ -76,8 +67,9 @@ Visit: http://localhost:8000/docs
 | GET | `/api/notifications` | Get all notifications |
 | GET | `/api/notifications/pending` | Get pending notifications |
 | POST | `/api/notifications/trigger` | Trigger a notification |
-| POST | `/api/notifications/process` | Process notifications & escalations |
-| PUT | `/api/notifications/{id}/acknowledge` | Acknowledge notification |
+| POST | `/api/notifications/trigger-multi` | Trigger multi-channel notification |
+| POST | `/api/notifications/process` | Process pending notifications |
+| GET | `/api/notifications/by-channel/{channel}` | Get by channel |
 
 ### Notification Settings
 | Method | Endpoint | Description |
@@ -85,43 +77,103 @@ Visit: http://localhost:8000/docs
 | GET | `/api/notifications/settings` | Get all settings |
 | POST | `/api/notifications/settings` | Create settings |
 | PUT | `/api/notifications/settings/{id}` | Update settings |
+| DELETE | `/api/notifications/settings/{id}` | Delete settings |
+| GET | `/api/notifications/settings/rule/{rule_id}` | Get settings by rule |
 
 ---
 
-## Notification Methods
+## Condition Types
 
-Users can select their preferred notification method:
-- **EMAIL** - Email notifications
-- **SMS** - SMS via phone
-- **WHATSAPP** - WhatsApp messages
-- **PUSH** - Push notifications (FCM)
-
----
-
-## Escalation
-
-When a rule triggers:
-1. Notification created with status `PENDING`
-2. Processed → status `SENT`
-3. If not acknowledged within escalation time → auto-escalate
-4. Repeats up to max_escalations times
-
-### Settings:
-- `send_interval_minutes` - How often to send
-- `escalation_enabled` - Enable escalation
-- `escalation_interval_minutes` - Time before escalating
-- `max_escalations` - Maximum escalation levels
-
----
-
-## Scheduler Setup
-
-To process notifications automatically, call this endpoint periodically:
-
-```bash
-# Every minute (Linux/Mac)
-* * * * * curl -X POST http://localhost:8000/api/notifications/process
+### Simple (Single Condition)
+```json
+{
+  "condition": "temperature > 95",
+  "condition_type": "SIMPLE"
+}
 ```
+
+### AND (Multiple Conditions - All Must Match)
+```json
+{
+  "condition": "temperature > 95 AND humidity < 80",
+  "condition_type": "AND"
+}
+```
+
+### OR (Multiple Conditions - Any Must Match)
+```json
+{
+  "condition": "status == 'error' OR temperature > 100",
+  "condition_type": "OR"
+}
+```
+
+---
+
+## Supported Channels
+
+- **EMAIL** - Email notifications via SMTP
+- **SMS** - Text messages via SMS provider
+- **WHATSAPP** - WhatsApp messages via WhatsApp API
+- **TELEGRAM** - Telegram bot messages
+- **WEBHOOK** - HTTP POST to custom URL
+- **INAPP** - In-app notifications (stored in database)
+
+---
+
+## How It Works
+
+### 1. Create a Rule
+```json
+POST /api/rules
+{
+  "name": "High Temperature Alert",
+  "condition": "temperature > 95",
+  "condition_type": "SIMPLE",
+  "debounce_seconds": 60,
+  "retry_enabled": true
+}
+```
+
+### 2. Set Notification Settings
+```json
+POST /api/notifications/settings
+{
+  "rule_id": "<RULE_ID>",
+  "notification_type": "ALERT",
+  "recipient_email": "user@example.com",
+  "recipient_phone": "1234567890"
+}
+```
+
+### 3. Evaluate Data
+```json
+POST /api/rules/evaluate
+{
+  "temperature": 96
+}
+```
+
+System will:
+- Evaluate condition (`96 > 95` = TRUE)
+- Send notifications to ALL configured channels in parallel
+- Log each notification attempt
+- Update rule state to "TRIGGERED"
+
+---
+
+## Debounce & Retry
+
+### Debounce
+Prevents repeated alerts within a time window:
+- Set `debounce_seconds` in rule (default: 60)
+- If rule triggered again within window, it's skipped
+
+### Retry
+Automatic retry for failed notifications:
+- Set `retry_enabled: true` in rule
+- Configure `retry_max_attempts` (default: 3)
+- Configure `retry_interval_seconds` (default: 30)
 
 ---
 
@@ -129,55 +181,55 @@ To process notifications automatically, call this endpoint periodically:
 
 ```
 .
-├── app/
-│   ├── __init__.py
-│   ├── database.py          # Database connection
-│   ├── main.py             # Application entry point
-│   ├── models.py           # Database models & queries
-│   ├── schemas.py          # Pydantic schemas
-│   └── routes/
-│       ├── __init__.py
-│       ├── rules.py
-│       ├── rule_actions.py
-│       ├── rule_evaluations.py
-│       ├── rule_triggers.py
-│       └── notifications.py
-├── config.py                # Configuration
-├── requirements.txt          # Dependencies
 ├── .env                    # Environment variables
-└── README.md
+├── requirements.txt        # Dependencies
+├── config/                 # Database config
+└── app/
+    ├── main.py            # Application entry point
+    ├── models.py          # Database models & queries
+    ├── schemas.py         # Pydantic schemas
+    ├── database.py        # Database connection
+    ├── routes/
+    │   ├── rules.py
+    │   ├── notifications.py
+    │   ├── rule_evaluation_service.py
+    │   └── ...
+    └── services/
+        ├── notification_service.py
+        ├── notification_dispatcher.py
+        └── rule_evaluator.py
 ```
 
 ---
 
-## Database
+## Database Tables
 
-The application uses MySQL. Tables are created automatically:
-- **rules** - Rule definitions
+Automatically created on startup:
+- **rules** - Rule definitions with conditions
 - **rule_actions** - Actions when rules trigger
 - **rule_evaluations** - Evaluation results
-- **rule_triggers** - Triggered events
-- **notifications** - Notification records with timestamps
-- **notification_settings** - User notification preferences
+- **rule_triggers** - Trigger configurations
+- **notifications** - Notification records
+- **notification_settings** - User preferences
+- **rule_events** - Event tracking for deduplication
+- **notification_logs** - Detailed notification logs
 
 ---
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| DB_HOST | localhost | Database host |
-| DB_USER | root | Database user |
-| DB_PASSWORD | (empty) | Database password |
-| DB_NAME | factory | Database name |
-| HOST | 0.0.0.0 | Server host |
-| PORT | 8000 | Server port |
+| Variable | Description |
+|----------|-------------|
+| DB_HOST | Database host |
+| DB_USER | Database user |
+| DB_PASSWORD | Database password |
+| DB_NAME | Database name |
 
 ---
 
 ## API Documentation
 
-Full interactive API documentation available at:
+Full interactive API documentation:
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 
