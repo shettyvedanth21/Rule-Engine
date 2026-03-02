@@ -1,150 +1,10 @@
 # Table definitions for factory database
+# Now loaded from external SQL files
 
-# rules table
-RULES_TABLE = """
-CREATE TABLE IF NOT EXISTS rules (
-    id CHAR(36) PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    condition LONGTEXT,
-    condition_type VARCHAR(20) DEFAULT 'SIMPLE' COMMENT 'SIMPLE, AND, OR',
-    is_active BOOLEAN DEFAULT TRUE,
-    priority INT DEFAULT 0,
-    state VARCHAR(20) DEFAULT 'NOT_TRIGGERED' COMMENT 'TRIGGERED, NOT_TRIGGERED',
-    last_triggered_at TIMESTAMP NULL,
-    debounce_seconds INT DEFAULT 60 COMMENT 'Debounce time in seconds',
-    retry_enabled BOOLEAN DEFAULT TRUE,
-    retry_max_attempts INT DEFAULT 3,
-    retry_interval_seconds INT DEFAULT 30,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-)
-"""
+from app.sql_utils import get_queries
 
-# rule_actions table
-RULE_ACTIONS_TABLE = """
-CREATE TABLE IF NOT EXISTS rule_actions (
-    id CHAR(36) PRIMARY KEY,
-    rule_id CHAR(36),
-    action_type VARCHAR(100) NOT NULL,
-    action_config LONGTEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE
-)
-"""
-
-# rule_evaluations table
-RULE_EVALUATIONS_TABLE = """
-CREATE TABLE IF NOT EXISTS rule_evaluations (
-    id CHAR(36) PRIMARY KEY,
-    rule_id CHAR(36),
-    evaluated_at TIMESTAMP NOT NULL,
-    result BOOLEAN,
-    details LONGTEXT,
-    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE
-)
-"""
-
-# rule_triggers table
-RULE_TRIGGERS_TABLE = """
-CREATE TABLE IF NOT EXISTS rule_triggers (
-    id CHAR(36) PRIMARY KEY,
-    rule_id CHAR(36),
-    trigger_type VARCHAR(100) NOT NULL,
-    trigger_config LONGTEXT,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE
-)
-"""
-
-# rule_events table - tracks rule trigger events for deduplication
-RULE_EVENTS_TABLE = """
-CREATE TABLE IF NOT EXISTS rule_events (
-    id CHAR(36) PRIMARY KEY,
-    rule_id CHAR(36),
-    event_id VARCHAR(255) NOT NULL COMMENT 'Unique identifier for the trigger event',
-    triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    data_snapshot LONGTEXT COMMENT 'JSON snapshot of data at trigger time',
-    notification_status VARCHAR(50) DEFAULT 'PENDING' COMMENT 'PENDING, SENT, FAILED, PARTIAL',
-    channels_notified LONGTEXT COMMENT 'JSON array of channels that were notified',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE,
-    UNIQUE KEY unique_event (rule_id, event_id)
-)
-"""
-
-# notification_logs table - detailed logs for each notification attempt
-NOTIFICATION_LOGS_TABLE = """
-CREATE TABLE IF NOT EXISTS notification_logs (
-    id CHAR(36) PRIMARY KEY,
-    event_id CHAR(36),
-    rule_id CHAR(36),
-    notification_id CHAR(36),
-    channel VARCHAR(20) NOT NULL,
-    status VARCHAR(20) NOT NULL COMMENT 'PENDING, SENT, FAILED, RETRYING',
-    attempt_number INT DEFAULT 1,
-    error_message TEXT,
-    sent_at TIMESTAMP NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE
-)
-"""
-
-# notifications table
-NOTIFICATIONS_TABLE = """
-CREATE TABLE IF NOT EXISTS notifications (
-    id CHAR(36) PRIMARY KEY,
-    rule_id CHAR(36),
-    title VARCHAR(255) NOT NULL,
-    message TEXT NOT NULL,
-    notification_type VARCHAR(50) DEFAULT 'INFO',
-    channel VARCHAR(20) NOT NULL COMMENT 'SMS, WHATSAPP, TELEGRAM, EMAIL, WEBHOOK',
-    status VARCHAR(50) DEFAULT 'PENDING',
-    priority VARCHAR(20) DEFAULT 'MEDIUM',
-    recipient_email VARCHAR(255),
-    recipient_phone VARCHAR(50),
-    whatsapp_number VARCHAR(50),
-    telegram_chat_id VARCHAR(50),
-    webhook_url VARCHAR(500),
-    triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    send_at TIMESTAMP NOT NULL,
-    sent_at TIMESTAMP NULL,
-    acknowledged_at TIMESTAMP NULL,
-    acknowledged_by VARCHAR(255),
-    escalation_level INT DEFAULT 0,
-    next_escalation_at TIMESTAMP NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE
-)
-"""
-
-# notification_settings table
-NOTIFICATION_SETTINGS_TABLE = """
-CREATE TABLE IF NOT EXISTS notification_settings (
-    id CHAR(36) PRIMARY KEY,
-    rule_id CHAR(36),
-    notification_type VARCHAR(50) NOT NULL,
-    recipient_email VARCHAR(255),
-    recipient_phone VARCHAR(50),
-    whatsapp_number VARCHAR(50),
-    telegram_chat_id VARCHAR(50),
-    webhook_url VARCHAR(500),
-    push_token VARCHAR(255),
-    send_interval_minutes INT DEFAULT 60,
-    escalation_enabled BOOLEAN DEFAULT TRUE,
-    escalation_interval_minutes INT DEFAULT 60,
-    max_escalations INT DEFAULT 3,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE
-)
-"""
+# Get queries from external SQL file
+_queries = get_queries()
 
 # SQL queries for CRUD operations
 RULES_QUERIES = {
@@ -161,7 +21,7 @@ RULES_QUERIES = {
 RULE_ACTIONS_QUERIES = {
     'get_all': "SELECT * FROM rule_actions ORDER BY created_at DESC",
     'get_by_id': "SELECT * FROM rule_actions WHERE id = %s",
-    'get_by_rule_id': "SELECT * FROM rule_actions WHERE rule_id = %s",
+    'get_by_rule_id': "SELECT * FROM rule_actions WHERE rule_id = %s ORDER BY created_at DESC",
     'create': "INSERT INTO rule_actions (id, rule_id, action_type, action_config) VALUES (%s, %s, %s, %s)",
     'update': "UPDATE rule_actions SET action_type=%s, action_config=%s WHERE id=%s",
     'delete': "DELETE FROM rule_actions WHERE id = %s",
@@ -216,7 +76,6 @@ NOTIFICATIONS_QUERIES = {
     'get_by_rule_id': "SELECT * FROM notifications WHERE rule_id = %s ORDER BY triggered_at DESC",
     'get_by_channel': "SELECT * FROM notifications WHERE channel = %s ORDER BY triggered_at DESC",
     'get_pending': "SELECT * FROM notifications WHERE status = 'PENDING' AND send_at <= NOW()",
-    'get_pending_by_channel': "SELECT * FROM notifications WHERE status = 'PENDING' AND send_at <= NOW() AND channel = %s",
     'get_escalations': "SELECT * FROM notifications WHERE status = 'SENT' AND acknowledged_at IS NULL AND next_escalation_at IS NOT NULL AND next_escalation_at <= NOW()",
     'create': "INSERT INTO notifications (id, rule_id, title, message, notification_type, channel, status, priority, recipient_email, recipient_phone, whatsapp_number, telegram_chat_id, webhook_url, send_at, escalation_level) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
     'update_status': "UPDATE notifications SET status=%s, sent_at=NOW() WHERE id=%s",

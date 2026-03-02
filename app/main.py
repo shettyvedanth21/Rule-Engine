@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os
 
 from app.database import test_connection, execute_query
+from app.sql_utils import load_schema
 from app.routes import rules, rule_actions, rule_evaluations, rule_triggers
 from app.routes.notifications import router as notifications_router
 from app.routes.rule_evaluation_service import router as rule_evaluation_router
@@ -144,154 +145,15 @@ async def startup_event():
         print("Database connection established!")
         # Create tables if they don't exist
         try:
-            # Create rules table with enhanced fields
-            execute_query("""
-                CREATE TABLE IF NOT EXISTS rules (
-                    id CHAR(36) PRIMARY KEY,
-                    name VARCHAR(255) NOT NULL,
-                    description TEXT,
-                    `condition` LONGTEXT,
-                    condition_type VARCHAR(20) DEFAULT 'SIMPLE' COMMENT 'SIMPLE, AND, OR',
-                    is_active BOOLEAN DEFAULT TRUE,
-                    priority INT DEFAULT 0,
-                    state VARCHAR(20) DEFAULT 'NOT_TRIGGERED' COMMENT 'TRIGGERED, NOT_TRIGGERED',
-                    last_triggered_at TIMESTAMP NULL,
-                    debounce_seconds INT DEFAULT 60 COMMENT 'Debounce time in seconds',
-                    retry_enabled BOOLEAN DEFAULT TRUE,
-                    retry_max_attempts INT DEFAULT 3,
-                    retry_interval_seconds INT DEFAULT 30,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                )
-            """, fetch=False)
-            
-            # Create rule_actions table
-            execute_query("""
-                CREATE TABLE IF NOT EXISTS rule_actions (
-                    id CHAR(36) PRIMARY KEY,
-                    rule_id CHAR(36),
-                    action_type VARCHAR(100) NOT NULL,
-                    action_config LONGTEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE
-                )
-            """, fetch=False)
-            
-            # Create rule_evaluations table
-            execute_query("""
-                CREATE TABLE IF NOT EXISTS rule_evaluations (
-                    id CHAR(36) PRIMARY KEY,
-                    rule_id CHAR(36),
-                    evaluated_at TIMESTAMP NOT NULL,
-                    result BOOLEAN,
-                    details LONGTEXT,
-                    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE
-                )
-            """, fetch=False)
-            
-            # Create rule_triggers table
-            execute_query("""
-                CREATE TABLE IF NOT EXISTS rule_triggers (
-                    id CHAR(36) PRIMARY KEY,
-                    rule_id CHAR(36),
-                    trigger_type VARCHAR(100) NOT NULL,
-                    trigger_config LONGTEXT,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE
-                )
-            """, fetch=False)
-            
-            # Create notifications table with channel support
-            execute_query("""
-                CREATE TABLE IF NOT EXISTS notifications (
-                    id CHAR(36) PRIMARY KEY,
-                    rule_id CHAR(36),
-                    title VARCHAR(255) NOT NULL,
-                    message TEXT NOT NULL,
-                    notification_type VARCHAR(50) DEFAULT 'INFO',
-                    channel VARCHAR(20) NOT NULL COMMENT 'SMS, WHATSAPP, TELEGRAM, EMAIL, WEBHOOK',
-                    status VARCHAR(50) DEFAULT 'PENDING',
-                    priority VARCHAR(20) DEFAULT 'MEDIUM',
-                    recipient_email VARCHAR(255),
-                    recipient_phone VARCHAR(50),
-                    whatsapp_number VARCHAR(50),
-                    telegram_chat_id VARCHAR(50),
-                    webhook_url VARCHAR(500),
-                    triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    send_at TIMESTAMP NOT NULL,
-                    sent_at TIMESTAMP NULL,
-                    acknowledged_at TIMESTAMP NULL,
-                    acknowledged_by VARCHAR(255),
-                    escalation_level INT DEFAULT 0,
-                    next_escalation_at TIMESTAMP NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE
-                )
-            """, fetch=False)
-            
-            # Create notification_settings table
-            execute_query("""
-                CREATE TABLE IF NOT EXISTS notification_settings (
-                    id CHAR(36) PRIMARY KEY,
-                    rule_id CHAR(36),
-                    notification_type VARCHAR(50) NOT NULL,
-                    recipient_email VARCHAR(255),
-                    recipient_phone VARCHAR(50),
-                    whatsapp_number VARCHAR(50),
-                    telegram_chat_id VARCHAR(50),
-                    webhook_url VARCHAR(500),
-                    push_token VARCHAR(255),
-                    send_interval_minutes INT DEFAULT 60,
-                    escalation_enabled BOOLEAN DEFAULT TRUE,
-                    escalation_interval_minutes INT DEFAULT 60,
-                    max_escalations INT DEFAULT 3,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE
-                )
-            """, fetch=False)
-            
-            # Create rule_events table - tracks rule trigger events for deduplication
-            execute_query("""
-                CREATE TABLE IF NOT EXISTS rule_events (
-                    id CHAR(36) PRIMARY KEY,
-                    rule_id CHAR(36),
-                    event_id VARCHAR(255) NOT NULL COMMENT 'Unique identifier for the trigger event',
-                    triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    data_snapshot LONGTEXT COMMENT 'JSON snapshot of data at trigger time',
-                    notification_status VARCHAR(50) DEFAULT 'PENDING' COMMENT 'PENDING, SENT, FAILED, PARTIAL',
-                    channels_notified LONGTEXT COMMENT 'JSON array of channels that were notified',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE,
-                    UNIQUE KEY unique_event (rule_id, event_id)
-                )
-            """, fetch=False)
-            
-            # Create notification_logs table - detailed logs for each notification attempt
-            execute_query("""
-                CREATE TABLE IF NOT EXISTS notification_logs (
-                    id CHAR(36) PRIMARY KEY,
-                    event_id CHAR(36),
-                    rule_id CHAR(36),
-                    notification_id CHAR(36),
-                    channel VARCHAR(20) NOT NULL,
-                    status VARCHAR(20) NOT NULL COMMENT 'PENDING, SENT, FAILED, RETRYING',
-                    attempt_number INT DEFAULT 1,
-                    error_message TEXT,
-                    sent_at TIMESTAMP NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    FOREIGN KEY (rule_id) REFERENCES rules(id) ON DELETE CASCADE
-                )
-            """, fetch=False)
+            # Load and execute schema from external SQL file
+            schema_sql = load_schema()
+            # Execute each statement separately (split by semicolon)
+            statements = [s.strip() for s in schema_sql.split(';') if s.strip()]
+            for statement in statements:
+                if statement:
+                    execute_query(statement, fetch=False)
             
             print("Database tables created successfully!")
-            print("Database tables updated successfully!")
         except Exception as e:
             print(f"Error creating tables: {e}")
     else:

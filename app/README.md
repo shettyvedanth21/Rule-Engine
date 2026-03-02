@@ -184,20 +184,24 @@ Automatic retry for failed notifications:
 ├── .env                    # Environment variables
 ├── requirements.txt        # Dependencies
 ├── config/                 # Database config
-└── app/
-    ├── main.py            # Application entry point
-    ├── models.py          # Database models & queries
-    ├── schemas.py         # Pydantic schemas
-    ├── database.py        # Database connection
-    ├── routes/
-    │   ├── rules.py
-    │   ├── notifications.py
-    │   ├── rule_evaluation_service.py
-    │   └── ...
-    └── services/
-        ├── notification_service.py
-        ├── notification_dispatcher.py
-        └── rule_evaluator.py
+├── app/
+│   ├── main.py            # Application entry point
+│   ├── models.py          # Database queries (loaded from sql/)
+│   ├── schemas.py         # Pydantic schemas
+│   ├── database.py        # Database connection
+│   ├── sql_utils.py       # SQL loader utility
+│   ├── sql/               # External SQL files
+│   │   ├── schema.sql    # Table definitions
+│   │   └── queries.sql   # CRUD queries
+│   ├── routes/
+│   │   ├── rules.py
+│   │   ├── notifications.py
+│   │   ├── rule_evaluation_service.py
+│   │   └── ...
+│   └── services/
+│       ├── notification_service.py
+│       ├── notification_dispatcher.py
+│       └── rule_evaluator.py
 ```
 
 ---
